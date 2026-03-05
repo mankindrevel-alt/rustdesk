@@ -105,26 +105,27 @@ jobs:
           # 1. Change Application ID to avoid ANY signature conflicts with official app
           sed -i 's/applicationId "com.carriez.flutter_hbb"/applicationId "com.carriez.flutter_hbb_dev"/g' ./flutter/android/app/build.gradle
           
-          # 2. Set memory for Gradle
+          # 2. Fix Kotlin version mismatch (downgrade to stable 1.9.10)
+          # The current version 2.1.21 seems too new for the Gradle version, causing metadata issues.
+          sed -i 's/id "org.jetbrains.kotlin.android" version "2.1.21" apply false/id "org.jetbrains.kotlin.android" version "1.9.10" apply false/g' ./flutter/android/settings.gradle
+          
+          # 3. Set memory for Gradle
           sed -i "s/org.gradle.jvmargs=-Xmx1024M/org.gradle.jvmargs=-Xmx2g/g" ./flutter/android/gradle.properties
           
-          # 3. Copy required native libs
+          # 4. Use debug signing for release build to bypass missing release key error
+          # This ensures the APK is signed (with V2/V3) so it can be installed on Fold 5.
+          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/g' ./flutter/android/app/build.gradle
+          
+          # 5. Copy required native libs
           cp ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so ./flutter/android/app/src/main/jniLibs/arm64-v8a/
           
-          # 4. Build the release APK (It will be unsigned by default since we don't have the release key)
+          # 6. Build the release APK
           pushd flutter
           flutter build apk --release --target-platform android-arm64
           popd
           
-          # 5. Bring the APK to the root
-          mv ./flutter/build/app/outputs/flutter-apk/app-release.apk ./rustdesk-unsigned.apk
-          
-          # 6. Generate a temporary keystore for a valid V2/V3 signature
-          keytool -genkey -v -keystore test.keystore -alias testkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Test, OU=Test, O=Test, L=Test, S=Test, C=US" -storepass password -keypass password
-          
-          # 7. Find apksigner and sign the APK explicitly
-          APKSIGNER=$(find $ANDROID_SDK_ROOT/build-tools -name "apksigner" | sort | tail -n 1)
-          $APKSIGNER sign --ks test.keystore --ks-pass pass:password --ks-key-alias testkey --key-pass pass:password --out rustdesk-fixed-android-arm64.apk ./rustdesk-unsigned.apk
+          # 7. Bring the APK to the root
+          mv ./flutter/build/app/outputs/flutter-apk/app-release.apk ./rustdesk-fixed-android-arm64.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
